@@ -1,82 +1,114 @@
 import streamlit as st
-import mysql.connector
+import pandas as pd
 import openai
+import time
 
 # Set up OpenAI API credentials
 openai.api_key = "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"
 
-# Function to establish a connection to the MySQL database
-def connect_to_mysql():
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="root",
-        database="temp"
-    )
-
-# Function to insert sentiment data into the MySQL database
-def insert_sentiment_into_db(connection, customer_id, name, chat, sentiment):
-    query = "INSERT INTO users (customer_id, name, chat, sentiment) VALUES (%s, %s, %s, %s)"
-    values = (customer_id, name, chat, sentiment)
-    cursor = connection.cursor()
-    try:
-        cursor.execute(query, values)
-        connection.commit()
-        st.success("Sentiment data inserted into the database.")
-    except Exception as e:
-        connection.rollback()  # Rollback the transaction if there's an error
-        st.error(f"Error inserting sentiment data: {str(e)}")
-    finally:
-        cursor.close()
-
 # Generate personalized sentiments using OpenAI API
-def generate_sentiment(name, chat):
-    prompt = f"I want you to act as a sentiment analyzer that will analyze the sentiment:\n"
+def generate_sentiment(customer_data):
+    prompt = f"I Want you to act as sentiment analyser that will analyse the sentiment:\n"
     prompt += f"Generate sentiment value (Positive, Negative, Neutral) from following data:\n"
-    prompt += f"Name: {name}\n"
-    prompt += f"Chat: {chat}\n"
-    prompt += f"Consider all the above customer data and generate the sentiment."
+    prompt += f"Customer ID: {customer_data['customerid']}\n"
+    prompt += f"Name: {customer_data['name']}\n"
+    prompt += f"Chat: {customer_data['chat']}\n"
+    prompt += f"Consider all the Above customer data and Generate the sentiment."
 
-    try:
-        response = openai.Completion.create(
-            engine="text-davinci-002",
-            prompt=prompt,
-            max_tokens=100,
-            temperature=0.1,
-            n=1,
-            stop=None,
-        )
-        sentiment = response.choices[0].text.strip()
-        return sentiment
-    except openai.error.OpenAIError as e:
-        return f"Error: {e}"
+
+
+    # Try to make the API call, and if a rate limit error occurs, wait and retry after a brief delay
+    while True:
+        try:
+            response = openai.Completion.create(
+                engine="text-davinci-002",
+                prompt=prompt,
+                max_tokens=100,
+                temperature=0.1,
+                n=1,
+                stop=None,
+            )
+            offer = response.choices[0].text.strip()
+            return offer
+        except openai.error.RateLimitError as e:
+            st.error("Rate limit reached. Waiting for 20 seconds before retrying.")
+            time.sleep(20)  # Wait for 20 seconds before retrying
+
+# Function to load data from Excel file
+def load_data(file_path):
+    df = pd.read_excel(file_path)
+    return df
 
 def main():
-    st.title("Sentiment Analyzer")
+    # Apply custom CSS style to the title and sidebar using HTML tags and inline CSS
+    st.markdown("""
+        <style>
+            h1 {
+                color: red;
+                text-align: center;
+                padding-top: 20px;
+                padding-bottom: 20px;
+                background-color: yellow; /* Set background color to yellow */
+            }
+            .sidebar .sidebar-content {
+                background-color: yellow;
+            }
+            .fileinput-button label {
+                background-color: red !important;
+                color: white !important;
+                border-color: red !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # Collecting customer information
-    name = st.text_input("Enter customer name:")
-    chat = st.text_area("Enter customer chat:")
-    
-    if st.button("Generate Sentiment"):
-        # Generate sentiment using OpenAI API
-        sentiment = generate_sentiment(name, chat)
+    # Upload and load data from Excel file
+    st.sidebar.header("Upload Customer Data")
 
-        # Connect to MySQL database
-        mysql_connection = connect_to_mysql()
+    # Apply custom style to the file uploader button
+    st.markdown(
+        """
+        <style>
+            .fileinput-button:before {
+                content: "Upload a file";
+                background-color: red;
+                color: white;
+                display: block;
+                border-radius: 5px;
+                padding: 8px 16px;
+                cursor: pointer;
+                # background-color: yellow;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    file = st.sidebar.file_uploader("", type=["xls", "xlsx"])
 
-        # Insert sentiment data into the MySQL database
-        try:
-            customer_id = len(name)  # Just a simple example of generating an ID
-            insert_sentiment_into_db(mysql_connection, customer_id, name, chat, sentiment)
-        except Exception as e:
-            st.error(f"Error inserting sentiment data: {str(e)}")
+    if file is not None:
+        df = load_data(file)
 
-        # Close the MySQL connection
-        mysql_connection.close()
+        # Display the loaded data
+        st.header("Loaded Customer Data")
+        st.dataframe(df)
 
-        # Display the generated sentiment
-        st.write(f"Generated Sentiment: {sentiment}")
+        # Generate personalized offers and store them in a DataFrame
+        offers_df = pd.DataFrame(columns=["customerid", "name", "chat", "Sentiment"])
+        for index, row in df.iterrows():
+            try:
+                offer = generate_sentiment(row)
+                offers_df.loc[len(offers_df)] = [row["customerid"], row["name"], row["chat"], offer]
+
+            except Exception as e:
+                st.error(f"Error generating sentiment for customer ID {row['customerid']}: {str(e)}")
+
+        # Set the index of the DataFrame to start from 1
+        offers_df.index = offers_df.index + 1
+
+        # Display the generated Sentiment table in the UI
+        st.header("Generated Sentiment")
+        st.table(offers_df)
 
 if __name__ == "__main__":
+    # Display the title only once at the beginning
+    st.markdown("<h1>Sentiment Analyzer</h1>", unsafe_allow_html=True)
     main()
