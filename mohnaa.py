@@ -3,7 +3,7 @@ import mysql.connector
 import openai
 
 # Set up OpenAI API credentials
-openai.api_key = "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"
+openai.api_key = "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"
 
 # Function to establish a connection to the MySQL database
 def connect_to_mysql():
