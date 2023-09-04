@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import openai
 import time
-
+import openpyxl as openpyxl
 # Set up OpenAI API credentials
 openai.api_key = "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"
 
